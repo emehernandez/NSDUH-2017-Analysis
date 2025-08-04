@@ -1,0 +1,385 @@
+---
+title: "NSDU2017 Analysis"
+author: "Emily Hernandez"
+date: "2025-07-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# install packages required for analysis and visualization
+
+cran_pcks <- c("tidyverse", "ggplot2", "dplyr", "tidyr", "car", "lmtest", "odds.n.ends", "tableone"
+               ,"sjPlot", "sjmisc", "sjlabelled", "vcd", "waffle", "RColorBrewer")
+
+install.packages("CRAN_pkgs")
+```
+
+```{r}
+### load in libraries
+
+library(tidyverse)
+library(tidyr)
+library(dplyr)
+library(car)
+library(lmtest)
+library(odds.n.ends)
+library(tableone)
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+
+# for visualizations
+library(ggplot2)
+library(vcd)
+library(waffle)
+library(RColorBrewer)
+library(forcats)
+library(scales)
+library(ggh4x)
+library(stringr)
+library(ggthemes)
+```
+
+```{r}
+# read in nsduh2017 dataset and do a quick overview of data 
+load("C:/Users/owner/Documents/Career/Resume Files and Materials/Code Samples/Input/NSDUH_2017.RData")
+
+# check output name 
+
+```
+
+```{r}
+# rename loaded dataset
+nsduh2017 <- PUF2017_100918
+
+head(nsduh2017)
+
+```
+
+
+```{r}
+# check unique values of predictor and outcome vars
+check_u <- c("mrjyr", "udpypnr", "irsex", "CATAG6", "NEWRACE2", "IREDUHIGHST2",
+            "income", "irmarit", "rskyfqtes", "herever", "hallucevr",
+            "cocever", "cigflag", "alcflag")
+
+# apply unique() to each variable
+unique_values <- lapply(nsduh2017[check_u], unique)
+
+# print the results
+unique_values
+
+```
+
+```{r}
+# recode or rename variables as needed
+
+# prescription opioid use disorder in the past year
+nsduh2017 <- nsduh2017 %>%
+             rename(opioid = udpypnr)
+# check 
+unique(nsduh2017$opioid)
+
+# age category 
+nsduh2017$agecat <- dplyr::recode(nsduh2017$CATAG6,
+                                  `1` = "12-17 years",
+                                  `2` = "18-25 years",
+                                  `3` = "26-34 years",
+                                  `4` = "35-49 years",
+                                  `5` = "50-64 years",
+                                  `6` = "65+ years")
+
+
+# race/ethnicity 
+nsduh2017$race <- dplyr::recode(nsduh2017$NEWRACE2,
+                         `1` = 'NH White',
+                         `2` = 'NH Black',
+                         `3` = 'NH Other',
+                         `4` = 'NH Other',
+                         `5` = 'NH Other',
+                         `6` = 'NH Other',
+                         `7` = 'Hispanic')
+
+# education level
+nsduh2017$edu <- dplyr::recode(nsduh2017$IREDUHIGHST2,
+                               `1` = "HS or less",
+                               `2` = "HS or less",
+                               `3` = "HS or less",
+                               `4` = "HS or less",
+                               `5` = "HS or less",
+                               `6` = "HS or less",
+                               `7` = "HS or less",
+                               `8` = "HS grad",
+                               `9` = "Some college",
+                               `10` = "Some college",
+                               `11` = "College grad")
+
+# income level by category 
+nsduh2017$incomecat <- dplyr::recode(nsduh2017$income,
+                               `1` = "<$20K",
+                               `2` = "$20K - $49K",
+                               `3` = "$50K - $74K",
+                               `4` = "$75K+")
+
+# marital status
+nsduh2017$marital <- dplyr::recode(nsduh2017$irmarit,
+                               `1` = "Married",
+                               `2` = "Not married",
+                               `3` = "Not married",
+                               `4` = "Not married",
+                               `99` = "NA")
+
+# engaged in risky behavior 
+nsduh2017$risky <- dplyr::recode(nsduh2017$rskyfqtes,
+                               `1` = "Never",
+                               `2` = "Seldom",
+                               `3` = "Sometimes",
+                               `4` = "Always",
+                               `85` = "NA",
+                               `94` = "NA",
+                               `97` = "NA",
+                               `98` = "NA"
+                               )
+
+# ever used heroin
+nsduh2017$heroin <- dplyr::recode(nsduh2017$herever,
+                                  `1` = "Yes",
+                                  `2` = "No",
+                                  `94` = "NA",
+                                  `97` = "NA")
+
+# ever used a hallucinogen 
+nsduh2017$hallucinogen <- dplyr::recode(nsduh2017$hallucevr,
+                                  `1` = "Yes",
+                                  `91` = "No",
+                                  `98` = "NA")
+
+# ever used cocaine 
+nsduh2017$cocaine<- dplyr::recode(nsduh2017$cocever,
+                                  `1` = "Yes",
+                                  `2` = "No",
+                                  `85` = "NA",
+                                  `94` = "NA",
+                                  `97` = "NA")
+
+
+
+```
+```{r}
+# check values of recoded and renamed vars
+check_rc_vals <- c("opioid", "agecat", "race", "edu", "incomecat", "marital", 
+                   "risky", "heroin", "hallucinogen", "cocaine")
+
+# apply unique() to each variable
+rc_unique_values <- lapply(nsduh2017[check_rc_vals], unique)
+
+# print the results
+rc_unique_values
+
+```
+
+```{r}
+# subset data to required vars for modeling only
+modeldata <- nsduh2017 %>%
+             dplyr::select(mrjyr, opioid, irsex, agecat, race, edu, incomecat, marital, 
+                           risky, heroin, hallucinogen, cocaine, cigflag, alcflag)
+
+# change all string values equal to "NA" as being true NAs to drop 
+modeldata[modeldata == "NA"] <- NA
+
+# for purpose of analysis, will drop NA values
+drop_na(modeldata)
+
+# check that number of observations decreased!
+```
+
+```{r}
+# begin modeling: does marijuana use predict having an opioid use disorder?
+
+### MODEL 1 ####
+
+# model marijuana as the only predictor
+model_1 <- (glm(opioid ~ as.factor(mrjyr), modeldata, family="binomial"))
+
+# summarize model 
+summary(model_1)
+
+# calculate and print ORs and 95% CIs  
+OR_mrjyr_1 <-exp(cbind(OR = coef(model_1), confint(model_1)))
+
+# print output
+OR_mrjyr_1
+```
+
+```{r}
+### MODEL 2 ###
+
+# model additional demographic vars
+model_2 <- (glm(opioid ~ as.factor(mrjyr)
+                          + as.factor(sex) 
+                          + as.factor(agecat) 
+                          + as.factor(race) 
+                          + as.factor(edu) 
+                          + as.factor(incomecat) 
+                          + as.factor(marital) 
+                          + as.factor(risky)
+                          ,modeldata, family="binomial"))
+
+# summarize model 
+summary(model_2)
+
+# calculate and print ORs and 95% CIs  
+OR_mrjyr_2 <-exp(cbind(OR = coef(model_2), confint(model_2)))
+
+# print output
+OR_mrjyr_2
+
+```
+
+
+```{r}
+### MODEL 3 ###
+
+# model additional drug use vars
+model_3 <- (glm(opioid ~ as.factor(mrjyr)
+                          + as.factor(irsex) 
+                          + as.factor(agecat) 
+                          + as.factor(race) 
+                          + as.factor(edu) 
+                          + as.factor(incomecat) 
+                          + as.factor(marital) 
+                          + as.factor(risky)
+                          + as.factor(heroin) 
+                          + as.factor(hallucinogen) 
+                          + as.factor(cocaine) 
+                          + as.factor(cigflag) 
+                          + as.factor(alcflag)
+                          ,modeldata, family="binomial"))
+
+# summarize model 
+summary(model_3)
+
+# calculate and print ORs and 95% CIs  
+OR_mrjyr_3 <-exp(cbind(OR = coef(model_3), confint(model_3)))
+
+# print output
+OR_mrjyr_3
+```
+
+```{r}
+odds.n.ends(model_3)
+```
+
+```{r}
+# check for multicollinearity 
+vif(mod = model_3)
+```
+
+```{r}
+# cook's D plot to identify influential observations
+# specifiy as top 4 influential observations
+plot(model_3, which=4, id.n=5, col="purple") 
+```
+```{r}
+# check final model fit
+logLik(model_3)
+
+# compare models
+lrtest(model_1, model_2, model_3)
+```
+```{r}
+### DESCRIPTIVE STATISTICS ###
+
+# opioid use disorder
+modeldata %>% 
+      group_by(opioid) %>%
+      summarize(freq.opioid = n()) %>%
+      mutate(perc.opioid = 100*(freq.opioid / sum(freq.opioid)))
+
+
+# ever used marijuana
+modeldata %>%
+      group_by(mrjyr) %>%
+      summarize(freq.mrjyr = n()) %>%
+      mutate(perc.mrjyr = 100*(freq.mrjyr / sum(freq.mrjyr)))
+
+# create table of all variables
+modeldata_table <- CreateTableOne(data = modeldata, factorVars = c("mrjyr", "irsex", "opioid", 
+                                                                 "cigflag", "alcflag"))
+
+print(modeldata_table, showAllLevels = TRUE)
+
+```
+
+```{r}
+# recode marijuana use var as a factor for visualizing data
+modeldata$mj <- recode_factor(modeldata$mrjyr,
+                                 `1` = "Did use marijuana in the past year",
+                                 `0` = "Did not use marijuana in the past year")
+
+unique(modeldata$mj)
+
+# visualize marijuana use
+modeldata %>%
+    ggplot(aes(x = mj, fill = mj)) + 
+    geom_bar(position = "dodge") +
+    scale_fill_manual(guide = "none",
+                      values = c("Did not use marijuana in the past year" = "#1f77b4",
+                                  "Did use marijuana in the past year" = "#ff7f0e")) +
+    coord_flip() +
+    scale_y_continuous(expand = c(0, 0)) +
+    xlab("") +
+    ylab("Number of Survey Respondents") +
+    ggtitle("Frequency of Past Year Marijuana Use \nAmong 2017 NSDUH Respondents") +
+    theme_minimal() +
+    theme(
+          panel.grid = element_blank(),
+          axis.line.x = element_line(color = "black"),
+          axis.line.y = element_line(color = "black"),
+          axis.text.x = element_text(size = 9, color = "black"),
+          axis.text.y = element_text(size = 12, color = "black"),
+          axis.title.x = element_text(size = 12, color = "black"),
+          
+          plot.title.position = "plot",  # places title in upper-left of the entire plot area
+          plot.title = element_text(size = 18, hjust = 0)  # left-aligns the title text
+          )
+```
+```{r}
+# recode marijuana use var as a factor for visualizing data
+modeldata$opioid_rc <- recode_factor(modeldata$opioid,
+                                 `1` = "Does have an opioid use disorder",
+                                 `0` = "Does not have an opioid use disorder")
+
+unique(modeldata$opioid_rc)
+
+# visualize opioid use disorder
+modeldata %>%
+    ggplot(aes(x = opioid_rc, fill = opioid_rc)) + 
+    geom_bar(position = "dodge") +
+    scale_fill_manual(guide = "none",
+                      values = c("Does not have an opioid use disorder" = "#1f77b4",
+                                  "Does have an opioid use disorder" = "#ff7f0e")) +
+    coord_flip() +
+    scale_y_continuous(expand = c(0, 0)) +
+    xlab("") +
+    ylab("Number of Survey Respondents") +
+    ggtitle("Frequency of Having an Opioid Use Disorder \nAmong 2017 NSDUH Respondents") +
+    theme_minimal() +
+    theme(
+          panel.grid = element_blank(),
+          axis.line.x = element_line(color = "black"),
+          axis.line.y = element_line(color = "black"),
+          axis.text.x = element_text(size = 9, color = "black"),
+          axis.text.y = element_text(size = 12, color = "black"),
+          axis.title.x = element_text(size = 12, color = "black"),
+          
+          plot.title.position = "plot",  # places title in upper-left of the entire plot area
+          plot.title = element_text(size = 18, hjust = 0)  # left-aligns the title text
+          )
+```
+
